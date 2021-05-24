@@ -9,10 +9,57 @@ using namespace ROCKSDB_NAMESPACE;
 
 std::string kDBPath = "/Users/d0g00kj/elabs/temp";
 static acl::string __keypre("test_key");
+static acl::string __key = "stream_key";
+
+static void show_message(const acl::redis_stream_message& message)
+{
+	printf("\tid=%s\r\n", message.id.c_str());
+	for (std::vector<acl::redis_stream_field>::const_iterator cit
+		= message.fields.begin(); cit != message.fields.end(); ++cit) {
+		printf("\t\tname=%s, value=%s\r\n", (*cit).name.c_str(),
+			(*cit).value.c_str());
+	}
+}
+
+static void show_messages(const acl::redis_stream_messages& messages)
+{
+	size_t i = 0;
+	printf("key=%s\r\n", messages.key.c_str());
+	for (std::vector<acl::redis_stream_message>::const_iterator
+		it = messages.messages.begin(); it != messages.messages.end();
+		++it) {
+
+		if (++i <= 10) {
+			show_message(*it);
+		}
+	}
+	printf("total messages count=%lu\r\n", (unsigned long) messages.size());
+}
+static void xread(acl::redis_stream& redis, size_t count)
+{
+	acl::redis_stream_messages messages;
+	std::map<acl::string, acl::string> streams;
+	streams[__key] = "0-0";
+
+	if (redis.xread(messages, streams, count) == false) {
+		printf("xread error=%s, key=%s\r\n",
+			redis.result_error(), __key.c_str());
+		const acl::string* req = redis.request_buf();
+		printf("request=[%s]\r\n", req ? req->c_str() : "NULL");
+		return;
+	}
+
+	printf("xread ok, key=%s\r\n", __key.c_str());
+
+	if (messages.empty()) {
+		printf("no messages\r\n");
+	} else {
+		show_messages(messages);
+	}
+}
 
 static bool test_set(acl::redis& cmd, int n)
 {
-    std::cout<< "deeapk1" << std::endl;
 	acl::string key, val;
 
 	for (int i = 0; i < n; i++)
@@ -78,29 +125,27 @@ static bool test_exists(acl::redis& cmd, int n)
 
 int main()
 {
-    std::cout<< "deepak" << std::endl;
-	int n = 1, conn_timeout = 10, rw_timeout = 10;
-	acl::string addr("127.0.0.1:6379"), command;
-	acl::acl_cpp_init();
-	acl::log::stdout_open(true);
-
-	acl::redis_client client(addr.c_str(), conn_timeout, rw_timeout);
-
-	acl::redis cmd(&client);
-	test_set(cmd, n);
-	test_get(cmd, n);
-	test_exists(cmd, n);
-
     DB* db;
     Options options;
     options.IncreaseParallelism();
     options.OptimizeLevelStyleCompaction();
     options.create_if_missing = true;
-
-    // open DB
     Status s = DB::Open(options, kDBPath, &db);
     assert(s.ok());
+    std::cout<< "RocksDb started!!" << std::endl;
 
+	int n = 1, conn_timeout = 10, rw_timeout = 10;
+	acl::string addr("127.0.0.1:6379"), command;
+	acl::acl_cpp_init();
+	acl::log::stdout_open(true);
+	acl::redis_client client(addr.c_str(), conn_timeout, rw_timeout);
+    std::cout<< "Connected to redis server!!" << std::endl;
+	acl::redis cmd(&client);
+	test_set(cmd, n);
+	test_get(cmd, n);
+	test_exists(cmd, n);
+    xread(cmd,10);
+    
     // Put key-value
     s = db->Put(WriteOptions(), "key1", "value");
     assert(s.ok());
